@@ -1,0 +1,808 @@
+tmp_1:
+LOAD
+	Distinct
+    IdCliente&'_'&Date(Fecha,'YYYYMM')						AS key,
+    IdCliente,
+    Fecha
+    
+FROM [lib://1_Resources_Compliance/Historico_NPS.xlsx]
+(ooxml, embedded labels, table is Sheet1);
+
+ctas:
+LOAD
+//     CTA_ID,
+//     CTA_TIPOCTA,
+//     CTA_TIT_FECHANAC,
+//     CTA_FECHA_ALTA,
+//     CTA_COD_IDENT,
+//     CTA_NRO_IDENT,
+//     CTA_NOMBRES,
+//     CTA_APELLIDOS,
+//     CTA_DIR_CONTRACTUAL,
+//     CTA_DIR_RESUMEN,
+//     CTA_CORTE,
+    CTA_MON_LIMCRED,
+    CTA_IMP_LIMCRED,
+//     CTA_FEC_LIMCRED,
+//     MC_STATUS,
+//     PROD_ID,
+//     MC_ID,
+//     MT_ID,
+//     BIN_ID,
+    CUSTOMER_ID,
+     TARJ_NUMERO,
+//     TARJ_COD_IDENT,
+//     TARJ_NRO_IDENT,
+//     TARJ_NRO_SOCIO,
+//     TARJ_NOMBRES,
+//     TARJ_APELLIDOS,
+//     TARJ_FECHA_ALTA,
+    MakeDate(left(TARJ_FECHA_ALTA,4),mid(TARJ_FECHA_ALTA,5,2),mid(TARJ_FECHA_ALTA,7,2))		AS fecha_alta,
+    MakeDate(left(TARJ_VENCIMIENTO,4),mid(TARJ_VENCIMIENTO,5,2),mid(TARJ_VENCIMIENTO,7,2))		AS fecha_baja,
+//     TARJ_FECHA_NACIMIENTO,
+//     TARJ_VENCIMIENTO,
+//     TARJ_TITULAR,
+//     TARJ_CHIP_CARD,
+//     TARJ_ACTIVA,
+// TARJ_TITULAR,
+     GAF_ID
+//     MBJ_ID,
+//     SEG_ID,
+//     CTA_NUMERO,
+//     "FECHA BAJA CUENTA",
+//     FECHA_FOTO_CTAS
+FROM [lib://2_QVD_TARJ/Cuentas_Tarjetas.QVD]
+(qvd)
+where Exists(IdCliente,CUSTOMER_ID)
+// and TARJ_TITULAR='S'
+;
+
+left Join(ctas)
+LOAD
+    GAF_ID,
+    GAF_Desc,
+    GAF_AGRUP,
+    VOLAR
+FROM [lib://1_Resources_TARJ/TABLAS/GAF_ID.csv]
+(txt, codepage is 28591, embedded labels, delimiter is ';', msq);
+
+
+
+left join(ctas)
+Load 
+	IdCliente		AS CUSTOMER_ID,
+    Fecha			AS fechaNPS,
+    key
+Resident tmp_1;
+
+ctas_tmp:
+NoConcatenate
+Load key,
+	max(CTA_MON_LIMCRED)		AS mon_limite,
+    max(CTA_IMP_LIMCRED)		AS limite,
+    count(TARJ_NUMERO)-1			AS cant_adicionales,
+  	Concat(distinct GAF_Desc,',')			AS grupo_afinidad
+where flag_mes=1
+group by key,
+;
+Load
+	key,
+	CUSTOMER_ID,
+//     fechaNPS,
+	CTA_MON_LIMCRED,
+    CTA_IMP_LIMCRED,
+	 GAF_Desc,
+     TARJ_NUMERO,
+//     GAF_AGRUP,
+//     VOLAR,
+    if(fechaNPS<fecha_alta,0,
+    	if(fechaNPS>fecha_baja,0,1))		AS flag_mes
+Resident ctas
+where GAF_Desc<>'Sin Grupo';        
+        
+
+drop table ctas;
+
+
+
+store ctas_tmp into [lib://2_QVD_Compliance/Tesis/ctas.csv] (txt, delimiter is ';');
+
+
+drop table ctas_tmp;
+
+drop table tmp_1;
+
+
+
+tmp_1:
+LOAD
+    IdCliente
+FROM [lib://1_Resources_Compliance/Historico_NPS.xlsx]
+(ooxml, embedded labels, table is Sheet1);
+
+tmp_2:
+LOAD
+	distinct
+    CTA_ID,
+    CUSTOMER_ID
+FROM [lib://2_QVD_TARJ/Cuentas_Tarjetas.QVD]
+(qvd)
+where Exists(IdCliente, CUSTOMER_ID);
+
+drop table tmp_1;
+
+movs:
+LOAD
+    MOV_ID,
+    MOV_IDPADRE,
+    ENTIDAD,
+    PROD_ID,
+    PROD_DESCRIPCION,
+    CTA_ID,
+    TARJ_NUMERO,
+    MCAT_ID,
+    MOV_FECHA_CUPON,
+    MOV_FECHA_PROCESO,
+    MON_ID,
+    MOV_ORIG_MON,
+    MOV_IMPORTE_TOTAL,
+    MOV_IMPORTE,
+    MOV_ORIG_IMP,
+    MOV_TOTCUOTAS,
+    MOV_NUMCUOTA,
+    MOV_NUMCUPON,
+    MOV_NUMCOMERCIO,
+    MOV_NOMCOMERCIO,
+    PAIS_ID,
+    CIUDAD,
+    MOV_VNET_NROSUC,
+    MOV_VNET_NROCOMERCIO,
+    MOV_MCC,
+    COD_TRN,
+    BIN_ADQUIRENTE,
+    MOV_DEBITOAUT,
+    ENTRY_MODE,
+    CRDHLDR_ID_METHOD,
+    ELECTRONIC_COMMERCE_INDICATOR,
+    AUT_ID,
+    MOV_NROAUT,
+    AUTH_SRC_CODE,
+    AUT_FECHAHORA,
+    DatoIncorrecto,
+    FECHA_FOTO_MVCR,
+     FECHA_FOTO_MVCR			AS MOV_FECHA_PROCESO_Date,
+     MonthName(Date(Date#(TextBetween(MOV_FECHA_PROCESO, '', ' '),'YYYYMMDD'),'DD/MM/YYYY'))				AS Mes,
+     Date(Date#(TextBetween(MOV_FECHA_PROCESO, '', ' '),'YYYYMMDD'),'YYYYMM')				AS MesKey
+FROM [lib://2_QVD_TARJ/Movimientos_Credito.QVD]
+(qvd)
+where  
+//monthname(Date(Date#(TextBetween(MOV_FECHA_PROCESO, '', ' '),'YYYYMMDD'),'DD/MM/YYYY'))>=monthname(AddMonths(today(),-12))
+//and monthname(Date(Date#(TextBetween(MOV_FECHA_PROCESO, '', ' '),'YYYYMMDD'),'DD/MM/YYYY'))<=monthname(AddMonths(today(),-1))
+year(Date(Date#(TextBetween(MOV_FECHA_PROCESO, '', ' '),'YYYYMMDD'),'DD/MM/YYYY'))>=2020
+and WildMatch(MCAT_ID,'8','7')
+// and MOV_IMPORTE > 0 
+ and PROD_DESCRIPCION<>'Gift Card'
+ and Exists(CTA_ID, CTA_ID)
+;
+
+
+store movs into [lib://2_QVD_Compliance/TarjetasMensual/TC/ComprasTC_tesis_tmp.qvd] (qvd);
+
+drop table tmp_2;
+
+ drop table movs;
+// exit script;
+// left join (movs)
+// Prom:
+// LOAD
+//     MOV_ID,			
+//     1	AS Promo
+// FROM [lib://2_QVD_TARJ/Relacion_PromocionMovimiento.qvd]
+// (qvd);
+
+movs:
+LOAD
+    MOV_ID,
+    MOV_IDPADRE,
+    ENTIDAD,
+    PROD_ID,
+    PROD_DESCRIPCION,
+    CTA_ID,
+    TARJ_NUMERO,
+    MCAT_ID,
+    MOV_FECHA_CUPON,
+    MOV_FECHA_PROCESO,
+    MON_ID,
+    MOV_ORIG_MON,
+    MOV_IMPORTE_TOTAL,
+    MOV_IMPORTE,
+    MOV_ORIG_IMP,
+    MOV_TOTCUOTAS,
+    MOV_NUMCUOTA,
+    MOV_NUMCUPON,
+    MOV_NUMCOMERCIO,
+    MOV_NOMCOMERCIO,
+    PAIS_ID,
+    CIUDAD,
+    MOV_VNET_NROSUC,
+    MOV_VNET_NROCOMERCIO,
+    MOV_MCC,
+    COD_TRN,
+    BIN_ADQUIRENTE,
+    MOV_DEBITOAUT,
+    ENTRY_MODE,
+    CRDHLDR_ID_METHOD,
+    ELECTRONIC_COMMERCE_INDICATOR,
+    AUT_ID,
+    MOV_NROAUT,
+    AUTH_SRC_CODE,
+    AUT_FECHAHORA,
+    DatoIncorrecto,
+    FECHA_FOTO_MVCR,
+    MOV_FECHA_PROCESO_Date,
+    Mes,
+    MesKey
+FROM [lib://2_QVD_Compliance/TarjetasMensual/TC/ComprasTC_tesis_tmp.qvd]
+(qvd);
+
+
+
+left join(movs)
+load 
+	avg(Cotizacion)						AS Cotizacion,
+    monthname(FECHA_FOTO_COT)			AS  Mes
+FROM [lib://2_QVD_TARJ/Cotizaciones.QVD](qvd)
+group by monthname(FECHA_FOTO_COT);
+
+tmp:
+LOAD
+	distinct
+//     CTA_ID,
+TARJ_NUMERO,
+    CUSTOMER_ID
+FROM [lib://2_QVD_TARJ/Cuentas_Tarjetas.QVD]
+(qvd);
+
+left join(movs)
+LOAD
+// 	CTA_ID,
+TARJ_NUMERO,
+    CUSTOMER_ID
+resident tmp;
+
+drop table tmp;
+
+
+tmp:
+Load Distinct *;
+Load
+	
+	CUSTOMER_ID&'_'&MesKey								AS %key,
+    CUSTOMER_ID										  
+Resident movs
+where len(CUSTOMER_ID)>1 and MCAT_ID=7
+;
+
+
+
+Left join (tmp)
+Load
+	CUSTOMER_ID&'_'&MesKey								AS %key,
+    sum(if(MON_ID<>858,MOV_IMPORTE,MOV_IMPORTE / Cotizacion))		AS MontoTotalCompras_USD,
+    Count(MOV_IMPORTE)												AS CantidadTotalCompras_USD
+Resident movs
+group by CUSTOMER_ID&'_'&MesKey;    
+
+
+
+// Left join (tmp)
+// Load
+// 	CUSTOMER_ID&'_'&MesKey								AS %key,
+//     sum(if(MON_ID<>858,MOV_IMPORTE,MOV_IMPORTE / Cotizacion))		AS MontoTotalCompras_USD,
+//     Count(MOV_IMPORTE)												AS CantidadTotalCompras_USD
+// Resident movs
+// // where Promo=1
+// group by MesKey, CUSTOMER_ID;    
+
+
+drop table movs;
+
+// Drop field [%key];
+
+// tmp_2:
+// NoConcatenate
+// Load *
+// Resident tmp
+// where MontoTotalComprasPromocion_USD>0;
+
+
+// drop table tmp;
+
+store tmp into [lib://2_QVD_Compliance/TarjetasMensual/TC/ComprasTC_tesis.csv] (txt, delimiter is ';');
+
+drop table tmp;
+
+movs:
+LOAD
+    MOV_ID,
+    MOV_IDPADRE,
+    ENTIDAD,
+    PROD_ID,
+    PROD_DESCRIPCION,
+    CTA_ID,
+    TARJ_NUMERO,
+    MCAT_ID,
+    MOV_FECHA_CUPON,
+    MOV_FECHA_PROCESO,
+    MON_ID,
+    MOV_ORIG_MON,
+    MOV_IMPORTE_TOTAL,
+    MOV_IMPORTE,
+    MOV_ORIG_IMP,
+    MOV_TOTCUOTAS,
+    MOV_NUMCUOTA,
+    MOV_NUMCUPON,
+    MOV_NUMCOMERCIO,
+    MOV_NOMCOMERCIO,
+    PAIS_ID,
+    CIUDAD,
+    MOV_VNET_NROSUC,
+    MOV_VNET_NROCOMERCIO,
+    MOV_MCC,
+    COD_TRN,
+    BIN_ADQUIRENTE,
+    MOV_DEBITOAUT,
+    ENTRY_MODE,
+    CRDHLDR_ID_METHOD,
+    ELECTRONIC_COMMERCE_INDICATOR,
+    AUT_ID,
+    MOV_NROAUT,
+    AUTH_SRC_CODE,
+    AUT_FECHAHORA,
+    DatoIncorrecto,
+    FECHA_FOTO_MVCR,
+    MOV_FECHA_PROCESO_Date,
+    Mes,
+    MesKey
+FROM [lib://2_QVD_Compliance/TarjetasMensual/TC/ComprasTC_tesis_tmp.qvd]
+(qvd);
+
+
+left join (movs)
+Prom:
+LOAD
+    MOV_ID,			
+    1	AS Promo
+FROM [lib://2_QVD_TARJ/Relacion_PromocionMovimiento.qvd]
+(qvd);
+
+
+left join(movs)
+load 
+	avg(Cotizacion)						AS Cotizacion,
+    monthname(FECHA_FOTO_COT)			AS  Mes
+FROM [lib://2_QVD_TARJ/Cotizaciones.QVD](qvd)
+group by monthname(FECHA_FOTO_COT);
+
+tmp:
+LOAD
+	distinct
+//     CTA_ID,
+TARJ_NUMERO,
+    CUSTOMER_ID
+FROM [lib://2_QVD_TARJ/Cuentas_Tarjetas.QVD]
+(qvd);
+
+left join(movs)
+LOAD
+// 	CTA_ID,
+TARJ_NUMERO,
+    CUSTOMER_ID
+resident tmp;
+
+drop table tmp;
+
+
+tmp:
+Load
+	Distinct
+	CUSTOMER_ID&'_'&MesKey								AS %key,
+    CUSTOMER_ID												  
+Resident movs
+where len(CUSTOMER_ID)>1 and MCAT_ID=7
+;
+
+
+
+
+// Left join (tmp)
+// Load
+// 	CUSTOMER_ID&'_'&MesKey								AS %key,
+//     sum(if(MON_ID<>858,MOV_IMPORTE,MOV_IMPORTE / Cotizacion))		AS MontoTotalCompras_USD,
+//     Count(MOV_IMPORTE)												AS CantidadTotalCompras_USD
+// Resident movs
+// group by MesKey, CUSTOMER_ID;    
+
+
+
+Left join (tmp)
+Load
+	CUSTOMER_ID&'_'&MesKey								AS %key,
+    sum(if(MON_ID<>858,MOV_IMPORTE,MOV_IMPORTE / Cotizacion))		AS MontoTotalComprasPromocion_USD,
+    Count(MOV_IMPORTE)												AS CantidadTotalComprasPromocion_USD
+Resident movs
+where Promo=1
+group by CUSTOMER_ID&'_'&MesKey;    
+
+
+drop table movs;
+
+
+
+// Drop field [%key];
+
+tmp_2:
+NoConcatenate
+Load *
+Resident tmp
+where MontoTotalComprasPromocion_USD>0;
+
+
+drop table tmp;
+
+store tmp_2 into [lib://2_QVD_Compliance/TarjetasMensual/TC/ComprasPromo_tesis.csv] (txt, delimiter is ';');
+
+
+tmp_1:
+LOAD
+	Distinct
+    IdCliente&'_'&Date(Fecha,'YYYYMM')		AS key
+   
+FROM [lib://1_Resources_Compliance/Historico_NPS.xlsx]
+(ooxml, embedded labels, table is Sheet1);
+
+
+Saldos:
+LOAD
+	*
+//     %Key_Customer,
+//     "Saldo en Cuentas",
+//     "Saldo en Contratos",
+//     "Saldo en Valores",
+// //     "Posición Consolidada",
+// //     "Tipo Sociedad",
+//     "Fecha de Proceso",
+//     "Posición Consolidada 6 Meses"
+FROM [lib://2_QVD_Compliance/QVD Modelo/Saldos_Modelo_*.QVD]
+(qvd)
+where exists(key,%Key_Customer&'_'&date("Fecha de Proceso",'YYYYMM')	);
+
+
+
+
+tmp:
+Load distinct
+	%Key_Customer&'_'&date("Fecha de Proceso",'YYYYMM')			AS key,
+    avg("Posición Consolidada 6 Meses")		AS "Posición Consolidada 6 Meses"
+Resident Saldos
+group by %Key_Customer&'_'&date("Fecha de Proceso",'YYYYMM');
+
+
+Drop table Saldos;
+
+store tmp  into [lib://2_QVD_Compliance/Tesis/Saldos_Promedios6Meses.csv] (txt, delimiter is ';');
+
+drop table tmp;
+
+drop table tmp_1;
+
+link:
+LOAD
+    Cliente,
+    "Mes de Datos",
+    Q_login,
+    Q_login_IL,
+    Q_login_SA,
+    Q_login_PG,
+    Q_login_TV,
+    Q_login_WA,
+    Q_login_1,
+    Q_login_2,
+    Q_login_3,
+    Q_login_4,
+    Q_login_IL_1,
+    Q_login_IL_2,
+    Q_login_IL_3,
+    Q_login_IL_4,
+    Q_login_SA_1,
+    Q_login_SA_2,
+    Q_login_SA_3,
+    Q_login_SA_4,
+    Q_login_PG_1,
+    Q_login_PG_2,
+    Q_login_PG_3,
+    Q_login_PG_4,
+    Q_login_TV_1,
+    Q_login_TV_2,
+    Q_login_TV_3,
+    Q_login_TV_4,
+    Q_login_WA_1,
+    Q_login_WA_2,
+    Q_login_WA_3,
+    Q_login_WA_4
+FROM [lib://2_QVD_Compliance/Modelo PLD/Maxi/Accesos Link/PC 02 - Accesos link_*.csv]
+(txt, codepage is 28591, embedded labels, delimiter is ';', msq);
+
+store link into [lib://2_QVD_Compliance/Tesis/Accesos_link.qvd] (qvd);
+
+
+tmp_1:
+LOAD
+    IdCliente
+FROM [lib://1_Resources_Compliance/Historico_NPS.xlsx]
+(ooxml, embedded labels, table is Sheet1);
+
+tmp_2:
+LOAD
+	distinct
+    CTA_ID,
+    CUSTOMER_ID
+FROM [lib://2_QVD_TARJ/Cuentas_Tarjetas.QVD]
+(qvd)
+where Exists(IdCliente, CUSTOMER_ID);
+
+drop table tmp_1;
+
+movs:
+LOAD
+    MOV_ID,
+    MOV_IDPADRE,
+    ENTIDAD,
+    PROD_ID,
+    PROD_DESCRIPCION,
+    CTA_ID,
+    TARJ_NUMERO,
+    MCAT_ID,
+    MOV_FECHA_CUPON,
+    MOV_FECHA_PROCESO,
+    MON_ID,
+    MOV_ORIG_MON,
+    MOV_IMPORTE_TOTAL,
+    MOV_IMPORTE,
+    MOV_ORIG_IMP,
+    MOV_TOTCUOTAS,
+    MOV_NUMCUOTA,
+    MOV_NUMCUPON,
+    MOV_NUMCOMERCIO,
+    MOV_NOMCOMERCIO,
+    PAIS_ID,
+    CIUDAD,
+    MOV_VNET_NROSUC,
+    MOV_VNET_NROCOMERCIO,
+    MOV_MCC,
+    COD_TRN,
+    BIN_ADQUIRENTE,
+    MOV_DEBITOAUT,
+    ENTRY_MODE,
+    CRDHLDR_ID_METHOD,
+    ELECTRONIC_COMMERCE_INDICATOR,
+    AUT_ID,
+    MOV_NROAUT,
+    AUTH_SRC_CODE,
+    AUT_FECHAHORA,
+    DatoIncorrecto,
+    FECHA_FOTO_MVCR,
+     FECHA_FOTO_MVCR			AS MOV_FECHA_PROCESO_Date,
+     MonthName(Date(Date#(TextBetween(MOV_FECHA_PROCESO, '', ' '),'YYYYMMDD'),'DD/MM/YYYY'))				AS Mes
+FROM [lib://2_QVD_TARJ/Movimientos_Credito.QVD]
+(qvd)
+where 
+//monthname(Date(Date#(TextBetween(MOV_FECHA_PROCESO, '', ' '),'YYYYMMDD'),'DD/MM/YYYY'))>=monthname(AddMonths(today(),-12))
+//and monthname(Date(Date#(TextBetween(MOV_FECHA_PROCESO, '', ' '),'YYYYMMDD'),'DD/MM/YYYY'))<=monthname(AddMonths(today(),-1))
+year(Date(Date#(TextBetween(MOV_FECHA_PROCESO, '', ' '),'YYYYMMDD'),'DD/MM/YYYY'))>=2020
+and WildMatch(MCAT_ID,'8','7')
+// and MOV_IMPORTE > 0 
+and PROD_DESCRIPCION<>'Gift Card'
+and Exists(CTA_ID, CTA_ID)
+and MOV_NUMCUOTA=1;
+
+
+drop table tmp_2;
+
+left join (movs)
+Prom:
+LOAD
+    MOV_ID,		
+    PROM_ID			AS PROM_ID_Mov,
+    1	AS Promo
+FROM [lib://2_QVD_TARJ/Relacion_PromocionMovimiento.qvd]
+(qvd);
+
+
+left join(movs)
+load 
+	avg(Cotizacion)						AS Cotizacion,
+    monthname(FECHA_FOTO_COT)			AS  Mes
+FROM [lib://2_QVD_TARJ/Cotizaciones.QVD](qvd)
+group by monthname(FECHA_FOTO_COT);
+
+// left join(movs)
+// LOAD
+// 	distinct
+//     CTA_ID,
+//     CUSTOMER_ID
+// FROM [lib://2_QVD_TARJ/Cuentas_Tarjetas.QVD]
+// (qvd);
+
+left join(movs)
+LOAD
+	CTA_COD_IDENT,
+    CTA_NRO_IDENT,
+    TARJ_NUMERO,
+    CUSTOMER_ID
+FROM [lib://2_QVD_TARJ/Cuentas_Tarjetas.QVD]
+(qvd);
+
+
+
+
+tmp:
+NoConcatenate
+Load 
+	*,
+    if(MON_ID<>858,MOV_IMPORTE_TOTAL,MOV_IMPORTE_TOTAL / Cotizacion)		AS MOV_IMPORTE_TOTAL_USD
+Resident movs;    
+
+drop table movs;
+
+Rename table tmp to movs;
+
+////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////
+Promociones:
+LOAD DISTINCT
+    PROM_ID,
+    PROM_NOMBRE,
+    //PROM_DESDE,
+    //PROM_HASTA,
+    Date(Date#(TextBetween(PROM_DESDE, '', ' '),'YYYYMMDD'),'DD/MM/YYYY')		AS PROM_DESDE,
+    Date(Date#(TextBetween(PROM_HASTA, '', ' '),'YYYYMMDD'),'DD/MM/YYYY')		AS PROM_HASTA,
+    PROM_BINES,
+    PROM_GRPS_AFIN,
+    PROM_DIAS_Y_HORARIOS,
+    PROM_TIPO,
+    PROM_DESCUENTO,
+    PROM_MODO_DESCUENTO,
+    PROM_PUNTO_MULTIP,
+    PROM_PUNTO_MONTO,
+    PROM_PUNTO_MON_ID,
+    FECHA_FOTO_PROM,
+    1	            	AS FlagPromocion,
+    IF(Date(Date#(TextBetween(PROM_HASTA, '', ' '),'YYYYMMDD'),'DD/MM/YYYY')>=today(),'S','N')		AS [Promocion Activa],
+    IF(PROM_TIPO='D','Descuentos','Puntos')		AS [Tipo Promocion]
+FROM [lib://2_QVD_TARJ/Promociones.QVD](qvd);
+
+LEFT JOIN(Promociones)
+LOAD
+    PROM_ID,
+    PROM_VNET_NROCOM,
+    PROM_VNET_NROSUC,
+    PROM_NOMCOMERCIO,
+    PROMCOM_PORCENTAJE,
+    FECHA_FOTO_PRCO
+FROM [lib://2_QVD_TARJ/PromocionesComercios.QVD](qvd);
+
+Prom:
+NoConcatenate
+LOAD 
+	*,
+    PROM_ID & '-' & PROM_VNET_NROCOM AS %KeyProm,
+    Num((100-PROMCOM_PORCENTAJE)/100,'##0%') 	AS [%Dto Comercio],
+    Num(PROMCOM_PORCENTAJE/100,'##0%')          AS [%Dto BANCO],
+    Num(PROM_DESCUENTO/100,'##0%')				AS [%Descuento]
+RESIDENT Promociones;
+
+DROP TABLE Promociones;
+RENAME TABLE Prom TO Promociones;
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+LEFT JOIN(movs)
+LOAD   
+	PROM_ID							AS PROM_ID_Mov,
+    PROM_VNET_NROCOM 				AS MOV_VNET_NROCOMERCIO,
+    //Agrego los campos necesarios para los calculos
+    num(PROM_MODO_DESCUENTO)	   	AS TipoDescuento,
+    num(PROM_DESCUENTO)/100			AS Descuento_Porcentaje,
+    num(PROMCOM_PORCENTAJE)/100		AS CostoDescuento_Porcentaje
+RESIDENT Promociones;
+
+Mov:
+NoConcatenate
+LOAD 
+	*,
+    num((Descuento_USD * CostoDescuento_Porcentaje)/num#('1,22', '##,##', ',', '.')) AS CostoDescuento_USD
+    ;
+LOAD
+	*,
+    PROM_ID_Mov & '-' & MOV_VNET_NROCOMERCIO 	AS %KeyProm,
+    //TipoDescuento = 0 --> El descuento se incluye en el importe.
+    //TipoDescuento = 1 --> El descuento no esta inlcuido, el banco le realizara una devolucion despues al cliente
+    IF(
+    	TipoDescuento = 0,
+        (MOV_IMPORTE_TOTAL_USD / (1 - Descuento_Porcentaje)) * Descuento_Porcentaje,
+        MOV_IMPORTE_TOTAL_USD * Descuento_Porcentaje
+    )											AS Descuento_USD
+RESIDENT movs;
+
+drop table movs;
+
+Rename table Mov to movs;
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+tmp:
+Load
+	Distinct
+	CTA_COD_IDENT&'_'&CTA_NRO_IDENT&'_'&Mes								AS %key,
+    CTA_COD_IDENT,
+    CTA_NRO_IDENT,
+    CUSTOMER_ID,
+    Mes												  
+Resident movs
+where len(CUSTOMER_ID)>1 and MCAT_ID=7
+;
+
+
+Left join (tmp)
+Load
+	CTA_COD_IDENT&'_'&CTA_NRO_IDENT&'_'&Mes								AS %key,
+    sum(if(MON_ID<>858,MOV_IMPORTE_TOTAL,MOV_IMPORTE_TOTAL / Cotizacion))		AS MontoTotalCompras_USD,
+    Count(MOV_IMPORTE)												AS CantidadTotalCompras_USD,
+    sum(CostoDescuento_USD)														as CostoDescuento_USD
+Resident movs
+group by Mes, CTA_COD_IDENT, CTA_NRO_IDENT;    
+
+
+
+Left join (tmp)
+Load
+	CTA_COD_IDENT&'_'&CTA_NRO_IDENT&'_'&Mes								AS %key,
+    sum(if(MON_ID<>858,MOV_IMPORTE_TOTAL,MOV_IMPORTE_TOTAL / Cotizacion))		AS MontoTotalComprasPromocion_USD,
+    Count(MOV_IMPORTE)												AS CantidadTotalComprasPromocion_USD
+Resident movs
+where Promo=1
+group by Mes, CTA_COD_IDENT,CTA_NRO_IDENT;    
+
+
+drop table movs;
+
+Drop field [%key];
+
+tmp_2:
+NoConcatenate
+Load *
+Resident tmp
+where MontoTotalComprasPromocion_USD>0;
+
+
+drop table tmp;
+
+store tmp_2 into [lib://2_QVD_Compliance/Tesis/ComprasPromo.csv] (txt, delimiter is ';');
+
+drop table tmp_2;
+
+drop table Promociones;
+
+
